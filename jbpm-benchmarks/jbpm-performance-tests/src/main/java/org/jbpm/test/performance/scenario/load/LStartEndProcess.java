@@ -40,7 +40,8 @@ public class LStartEndProcess implements IPerfTest {
     @Override
     public void execute() {
         RuntimeEngine runtimeEngine = jc.getRuntimeEngine();
-        KieSession ksession = runtimeEngine.getKieSession();
+        KieSession ksession = null;
+       	ksession = runtimeEngine.getKieSession();
         ksession.startProcess(ProcessStorage.StartEnd.getProcessDefinitionId());
     }
 

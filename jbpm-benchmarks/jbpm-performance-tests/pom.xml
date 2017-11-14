@@ -79,7 +79,7 @@
     <maven.jdbc.db.port />
     <maven.jdbc.db.server />
     <maven.jdbc.url>jdbc:h2:mem:test;MVCC=true</maven.jdbc.url>
-    <maven.btm.maxPoolSize>16</maven.btm.maxPoolSize>
+    <maven.btm.maxPoolSize>42</maven.btm.maxPoolSize>
   </properties>
 
   <dependencyManagement>
@@ -178,6 +178,7 @@
     <dependency>
       <groupId>org.jboss.narayana.jta</groupId>
       <artifactId>narayana-jta</artifactId>
+      <version>5.7.2.Final-SNAPSHOT</version>
     </dependency>
     <dependency>
       <groupId>org.apache.commons</groupId>
@@ -261,11 +262,25 @@
             <argument>-Djbpm.locking=${jbpm.locking}</argument>
             <argument>-Djbpm.ht.eager=${jbpm.ht.eager}</argument>
             <!--<argument>-agentlib:jdwp=transport=dt_socket,server=n,address=mmacik.brq.redhat.com:5005,suspend=y,onuncaught=n</argument>-->
+            <!--<argument>-agentlib:jdwp=transport=dt_socket,address=8787,server=y,suspend=y</argument>-->
             <argument>-classpath</argument>
             <classpath />
             <argument>org.kie.perf.Executor</argument>
           </arguments>
         </configuration>
+      </plugin>
+      <plugin>
+        <artifactId>maven-enforcer-plugin</artifactId>
+           <executions>
+             <execution>
+               <id>enforce-direct-dependencies</id>
+               <phase>none</phase>
+            </execution>
+            <execution>
+               <id>no-managed-deps</id>
+               <phase>none</phase>
+            </execution>
+          </executions>
       </plugin>
     </plugins>
   </build>

@@ -5,9 +5,7 @@ import java.io.FilenameFilter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.sql.Connection;
-import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.HashMap;
 import java.util.List;
@@ -19,16 +17,12 @@ import javax.naming.InitialContext;
 import javax.naming.NamingException;
 import javax.persistence.EntityManagerFactory;
 import javax.persistence.Persistence;
+import javax.sql.DataSource;
 import javax.sql.XADataSource;
 import javax.transaction.Status;
 import javax.transaction.UserTransaction;
 
-import com.arjuna.ats.jta.TransactionManager;
-import com.arjuna.ats.jta.common.JTAEnvironmentBean;
-import com.arjuna.ats.jta.common.jtaPropertyManager;
-import com.arjuna.common.internal.util.propertyservice.BeanPopulator;
-import org.apache.commons.dbcp2.managed.BasicManagedDataSource;
-import org.apache.commons.dbcp2.managed.ManagedConnection;
+import org.apache.commons.dbcp2.BasicDataSource;
 import org.drools.persistence.jta.JtaTransactionManager;
 import org.jbpm.runtime.manager.impl.DefaultRegisterableItemsFactory;
 import org.jbpm.runtime.manager.impl.jpa.EntityManagerFactoryManager;
@@ -51,6 +45,12 @@ import org.kie.internal.runtime.manager.context.ProcessInstanceIdContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.arjuna.ats.arjuna.common.arjPropertyManager;
+import com.arjuna.ats.internal.jdbc.drivers.PropertyFileDynamicClass;
+import com.arjuna.ats.jdbc.TransactionalDriver;
+import com.arjuna.ats.jta.TransactionManager;
+import com.arjuna.ats.jta.common.jtaPropertyManager;
+
 public class JBPMController {
 
     public enum Strategy {
@@ -65,7 +65,7 @@ public class JBPMController {
     private String persistenceUnitName = "org.jbpm.persistence.jpa";
 
     private EntityManagerFactory emf;
-    private BasicManagedDataSource ds;
+    private DataSource ds;
     private Connection conn;
 
     private RuntimeManagerFactory managerFactory = RuntimeManagerFactory.Factory.get();
@@ -154,8 +154,8 @@ public class JBPMController {
             }
             if (ds != null) {
                 try {
-                    ds.close();
-                } catch (SQLException e) {
+                    ds.getConnection().close();
+                } catch (Exception e) {
                     throw new RuntimeException("Error closing data source", e);
                 }
                 ds = null;
@@ -207,23 +207,23 @@ public class JBPMController {
         this.userGroupCallback = new JBossUserGroupCallbackImpl("classpath:/usergroups.properties");
     }
 
-    protected BasicManagedDataSource setupPoolingDataSource() {
+    protected DataSource setupPoolingDataSource() {
         log.info("Setting up data source!");
         Properties dsProps = getDatasourceProperties();
         String jdbcUrl = dsProps.getProperty("url");
         String driverClass = dsProps.getProperty("driverClassName");
 
         // Setup the datasource
-        BasicManagedDataSource pds = setupPoolingDataSource(dsProps, "jdbc/jbpm-ds");
+        DataSource pds = setupPoolingDataSource(dsProps, "jdbc/jbpm-ds");
         /*if (driverClass.startsWith("org.h2")) {
             pds.getDriverProperties().setProperty("url", jdbcUrl);
         }*/
-        try {
+        /*try {
             conn = pds.getConnection();
             log.info("Connection created! using: " + conn.getClass());
         } catch (SQLException e) {
             throw new RuntimeException("Could not create datasource!", e);
-        }
+        }*/
         return pds;
     }
 
@@ -289,34 +289,28 @@ public class JBPMController {
      * 
      * @return PoolingDataSource that has been set up but _not_ initialized.
      */
-    public static BasicManagedDataSource setupPoolingDataSource(Properties dsProps, String datasourceName) {
-        BasicManagedDataSource pds = new BasicManagedDataSource();
-
-        // The name must match what's in the persistence.xml!
-        pds.setJmxName(datasourceName);//setUniqueName(datasourceName);
-        //pds.setXADataSource(dsProps.getProperty("className"));//setClassName(dsProps.getProperty("className"));
-
-
-
-        pds.setMaxTotal(Integer.parseInt(dsProps.getProperty("maxPoolSize")));//setMaxPoolSize(Integer.parseInt(dsProps.getProperty("maxPoolSize")));
-        //pds.setAllowLocalTransactions(Boolean.parseBoolean(dsProps.getProperty("allowLocalTransactions")));
-        pds.setUsername(dsProps.getProperty("user"));
-        pds.setPassword(dsProps.getProperty("password"));
-
-
+    public static DataSource setupPoolingDataSource(Properties dsProps, String datasourceName) {
 //        for (String propertyName : new String[] { "user", "password" }) {
 //            pds.getDriverProperties().put(propertyName, dsProps.getProperty(propertyName));
 //        }
-        String xadsClassName = dsProps.getProperty("className");
-
         try {
+            String xadsClassName = dsProps.getProperty("className");
             XADataSource xads = (XADataSource) Class.forName(xadsClassName).newInstance();
             Class<?> xadsClass = xads.getClass();
 
-            String driverClass = dsProps.getProperty("driverClassName");
-            if (driverClass.startsWith("org.h2") ) {
+            if (xadsClassName.startsWith("org.h2") ) {
                 log.info("setting URL");
-                    xadsClass.getMethod("setURL", new Class[]{String.class}).invoke(xads, dsProps.getProperty("url"));
+                xadsClass.getMethod("setURL", new Class[]{String.class}).invoke(xads, dsProps.getProperty("url"));
+                xadsClass.getMethod("setUser", new Class[]{String.class}).invoke(xads, dsProps.getProperty("user"));
+                xadsClass.getMethod("setPassword", new Class[]{String.class}).invoke(xads, dsProps.getProperty("password"));
+            } else if (xadsClassName.startsWith("oracle") ){
+                System.out.println(dsProps.getProperty("url"));
+                System.out.println(dsProps.getProperty("user"));
+                System.out.println(dsProps.getProperty("password"));
+                xadsClass.getMethod("setDriverType", new Class[]{String.class}).invoke(xads, "thin");
+                xadsClass.getMethod("setURL", new Class[]{String.class}).invoke(xads, dsProps.getProperty("url"));
+                xadsClass.getMethod("setUser", new Class[]{String.class}).invoke(xads, dsProps.getProperty("user").toUpperCase());
+                xadsClass.getMethod("setPassword", new Class[]{String.class}).invoke(xads, dsProps.getProperty("password").toUpperCase());
             } /*else {
                 pds.setClassName(dsProps.getProperty("className"));
 
@@ -355,28 +349,27 @@ public class JBPMController {
                 }
             }*/
 
-            pds.setXaDataSourceInstance(xads);
-            pds.setTransactionManager(TransactionManager.transactionManager());
+            BasicDataSource pds = new BasicDataSource();
 
-
+            String file = "/home/ochaloup/my-testing/kie-benchmarks/jbpm-benchmarks/jbpm-performance-tests/datasource.props";
+            pds.setMaxTotal(Integer.parseInt(dsProps.getProperty("maxPoolSize")));
+            pds.setUrl("jdbc:arjuna:" + file);
+            pds.setConnectionProperties(TransactionalDriver.poolConnections + "=false;" + TransactionalDriver.dynamicClass + "=" + PropertyFileDynamicClass.class.getName());
+            pds.setDriver(new com.arjuna.ats.jdbc.TransactionalDriver());
 
             InitialContext initContext = new InitialContext();
-            initContext.rebind(datasourceName, pds);
-
             initContext.rebind("java:comp/UserTransaction", com.arjuna.ats.jta.UserTransaction.userTransaction());
             initContext.rebind("java:comp/TransactionManager", TransactionManager.transactionManager());
-            initContext.rebind("java:comp/TransactionSynchronizationRegistry", new com.arjuna.ats.internal.jta.transaction.arjunacore.TransactionSynchronizationRegistryImple());
-            /* just debugging stuff, didn't help either to turn off tx timeout
-            JTAEnvironmentBean jtaEnvironmentBean = jtaPropertyManager.getJTAEnvironmentBean();
-            jtaEnvironmentBean.setXaTransactionTimeoutEnabled(false);*/
+            initContext.rebind("java:comp/TransactionSynchronizationRegistry", jtaPropertyManager.getJTAEnvironmentBean().getTransactionSynchronizationRegistry());
+            initContext.rebind(datasourceName, pds);
 
+            arjPropertyManager.getCoordinatorEnvironmentBean().setDefaultTimeout(360);
+
+            return pds;
 
         } catch (InstantiationException | IllegalAccessException | ClassNotFoundException | NoSuchMethodException | InvocationTargetException | NamingException e) {
             throw new RuntimeException(e);
         }
-
-
-        return pds;
     }
 
     /**
